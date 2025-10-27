@@ -1,0 +1,246 @@
+blueprint:
+  name: Halloween Multi-Entity Show (Flicker + Lightning)
+  description: >
+    Blander flakkende lys og lyn for flere lys samtidig. Støtter både hvite lys (ikke-RGB)
+    og Hue/RGB-lys (sykler rød/oransje/gul + kaldt lyn). Orkestrert/staggered så de
+    forsterker hverandre. Start/stopp via input_boolean.
+  domain: automation
+  input:
+    toggle_helper:
+      name: Start/stopp-bryter (input_boolean)
+      description: Slå denne PÅ for å starte showet, AV for å stoppe.
+      selector:
+        entity:
+          domain: input_boolean
+    non_rgb_lights:
+      name: Hvite lys (uten RGB)
+      description: Velg alle spotter/striper uten RGB (Zigbee el.l.)
+      default: []
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    rgb_lights:
+      name: Hue/RGB-lys
+      description: Velg alle Philips Hue/RGB-lys for farger + lyn.
+      default: []
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    lightning_probability:
+      name: Sannsynlighet for lyn per runde
+      default: 0.18
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.01
+          mode: slider
+    min_cycle_pause_ms:
+      name: Pause mellom runder (ms) – minimum
+      default: 250
+      selector:
+        number:
+          min: 100
+          max: 2000
+          step: 10
+    max_cycle_pause_ms:
+      name: Pause mellom runder (ms) – maksimum
+      default: 700
+      selector:
+        number:
+          min: 200
+          max: 3000
+          step: 10
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input toggle_helper
+    to: "on"
+
+condition: []
+
+action:
+  - variables:
+      TOGGLE: !input toggle_helper
+      NONRGB: !input non_rgb_lights
+      RGB: !input rgb_lights
+      LPROB: !input lightning_probability
+      PAUSE_MIN: !input min_cycle_pause_ms
+      PAUSE_MAX: !input max_cycle_pause_ms
+
+  # Hovedløkke: kjør så lenge bryter er PÅ
+  - repeat:
+      while:
+        - condition: state
+          entity_id: !input toggle_helper
+          state: "on"
+      sequence:
+        - variables:
+            roll: "{{ range(0,100) | random }}"
+            do_lightning: "{{ roll < (LPROB * 100) }}"
+        - choose:
+            # === LYN-SEKVENS ===
+            - conditions: "{{ do_lightning }}"
+              sequence:
+                # 1) Forbered: demp alt litt for kontrast
+                - parallel:
+                    - repeat:
+                        for_each: "{{ NONRGB }}"
+                        sequence:
+                          - service: light.turn_on
+                            target: { entity_id: "{{ repeat.item }}" }
+                            data:
+                              brightness_pct: 12
+                              transition: 0.2
+                          - delay:
+                              milliseconds: "{{ range(0, 200) | random }}"
+                    - repeat:
+                        for_each: "{{ RGB }}"
+                        sequence:
+                          - service: light.turn_on
+                            target: { entity_id: "{{ repeat.item }}" }
+                            data:
+                              brightness_pct: 12
+                              transition: 0.2
+                          - delay:
+                              milliseconds: "{{ range(0, 200) | random }}"
+
+                - delay: "00:00:00.300"
+
+                # 2) Lyn-burst: flere blink, stagget på tvers av alle lys
+                - variables:
+                    flashes: "{{ range(3,6) | random }}"
+                - repeat:
+                    count: "{{ flashes }}"
+                    sequence:
+                      - parallel:
+                          # NON-RGB: kaldt hvitt blink via brightness
+                          - repeat:
+                              for_each: "{{ NONRGB }}"
+                              sequence:
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: 100
+                                - delay:
+                                    milliseconds: "{{ range(80, 220) | random }}"
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: 5
+                                - delay:
+                                    milliseconds: "{{ range(100, 240) | random }}"
+
+                          # RGB: blink med kaldt hvitt/blått sting
+                          - repeat:
+                              for_each: "{{ RGB }}"
+                              sequence:
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: 100
+                                    rgb_color: [180, 200, 255]
+                                - delay:
+                                    milliseconds: "{{ range(80, 220) | random }}"
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: 5
+                                - delay:
+                                    milliseconds: "{{ range(100, 240) | random }}"
+
+                # 3) Etterglød/rumling – varme små blaff, bølgevis
+                - variables:
+                    after_count: "{{ range(2,4) | random }}"
+                - repeat:
+                    count: "{{ after_count }}"
+                    sequence:
+                      - parallel:
+                          - repeat:
+                              for_each: "{{ NONRGB }}"
+                              sequence:
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: "{{ range(25, 60) | random }}"
+                                    transition: 0.15
+                                - delay:
+                                    milliseconds: "{{ range(120, 260) | random }}"
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: "{{ range(8, 18) | random }}"
+                                    transition: 0.2
+                                - delay:
+                                    milliseconds: "{{ range(120, 240) | random }}"
+                          - repeat:
+                              for_each: "{{ RGB }}"
+                              sequence:
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: "{{ range(30, 75) | random }}"
+                                    rgb_color: [255, 210, 150]
+                                    transition: 0.15
+                                - delay:
+                                    milliseconds: "{{ range(120, 260) | random }}"
+                                - service: light.turn_on
+                                  target: { entity_id: "{{ repeat.item }}" }
+                                  data:
+                                    brightness_pct: "{{ range(10, 20) | random }}"
+                                    transition: 0.2
+                                - delay:
+                                    milliseconds: "{{ range(120, 240) | random }}"
+
+                # Pause før neste runde etter lyn
+                - delay:
+                    seconds: "{{ range(3, 8) | random }}"
+
+            # === FLICKER-BØLGER (standard) ===
+            default:
+              - variables:
+                  flicker_steps: "{{ range(4, 9) | random }}"
+              - repeat:
+                  count: "{{ flicker_steps }}"
+                  sequence:
+                    - parallel:
+                        # NON-RGB: organisk flakkering, små staggers
+                        - repeat:
+                            for_each: "{{ NONRGB }}"
+                            sequence:
+                              - service: light.turn_on
+                                target: { entity_id: "{{ repeat.item }}" }
+                                data:
+                                  brightness_pct: "{{ range(18, 82) | random }}"
+                                  transition: "{{ [0.15, 0.2, 0.25, 0.3] | random }}"
+                              - delay:
+                                  milliseconds: "{{ range(60, 180) | random }}"
+
+                        # RGB: rød/oransje/gul syklus
+                        - variables:
+                            hue_palette:
+                              - [255, 40, 40]     # rød
+                              - [255, 140, 0]     # oransje
+                              - [255, 220, 120]   # gyllent/gult
+                        - repeat:
+                            for_each: "{{ RGB }}"
+                            sequence:
+                              - variables:
+                                  pick: "{{ hue_palette | random }}"
+                              - service: light.turn_on
+                                target: { entity_id: "{{ repeat.item }}" }
+                                data:
+                                  rgb_color: "{{ pick }}"
+                                  brightness_pct: "{{ range(30, 80) | random }}"
+                                  transition: "{{ [0.18, 0.22, 0.28, 0.35, 0.4] | random }}"
+                              - delay:
+                                  milliseconds: "{{ range(80, 220) | random }}"
+
+                    # liten pust mellom flakk-trinn
+                    - delay:
+                        milliseconds: "{{ range(PAUSE_MIN|int, PAUSE_MAX|int) | random }}"
