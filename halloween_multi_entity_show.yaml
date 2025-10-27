@@ -1,8 +1,8 @@
 blueprint:
   name: Halloween Multi-Entity Show (Flicker + Lightning)
   description: >
-    Blander flakkende lys og lyn for flere lys samtidig. Støtter både hvite lys (ikke-RGB)
-    og Hue/RGB-lys (sykler rød/oransje/gul + kaldt lyn). Orkestrert/staggered så de
+    Blander flakkende lys og lyn for flere lys samtidig. Støtter hvite lys (uten RGB)
+    og Hue/RGB-lys (roterer rød/oransje/gul + kaldt lyn). Orkestrert/staggered så de
     forsterker hverandre. Start/stopp via input_boolean.
   domain: automation
   input:
@@ -12,24 +12,28 @@ blueprint:
       selector:
         entity:
           domain: input_boolean
+
     non_rgb_lights:
       name: Hvite lys (uten RGB)
-      description: Velg alle spotter/striper uten RGB (Zigbee el.l.)
+      description: Velg spotter/striper uten RGB.
       default: []
       selector:
         entity:
           domain: light
           multiple: true
+
     rgb_lights:
       name: Hue/RGB-lys
-      description: Velg alle Philips Hue/RGB-lys for farger + lyn.
+      description: Velg Philips Hue/RGB-lys (skal rotere rød/oransje/gul og blinke ved lyn).
       default: []
       selector:
         entity:
           domain: light
           multiple: true
+
     lightning_probability:
       name: Sannsynlighet for lyn per runde
+      description: 0.18 er et fint utgangspunkt. Øk for mer lyn.
       default: 0.18
       selector:
         number:
@@ -37,16 +41,18 @@ blueprint:
           max: 1
           step: 0.01
           mode: slider
+
     min_cycle_pause_ms:
-      name: Pause mellom runder (ms) – minimum
+      name: Pause mellom flakketrinn (ms) – minimum
       default: 250
       selector:
         number:
           min: 100
           max: 2000
           step: 10
+
     max_cycle_pause_ms:
-      name: Pause mellom runder (ms) – maksimum
+      name: Pause mellom flakketrinn (ms) – maksimum
       default: 700
       selector:
         number:
@@ -72,8 +78,12 @@ action:
       LPROB: !input lightning_probability
       PAUSE_MIN: !input min_cycle_pause_ms
       PAUSE_MAX: !input max_cycle_pause_ms
+      hue_palette:
+        - [255, 40, 40]     # rød
+        - [255, 140, 0]     # oransje
+        - [255, 220, 120]   # gyllent/gult
 
-  # Hovedløkke: kjør så lenge bryter er PÅ
+  # Kjør så lenge bryteren er PÅ
   - repeat:
       while:
         - condition: state
@@ -84,10 +94,11 @@ action:
             roll: "{{ range(0,100) | random }}"
             do_lightning: "{{ roll < (LPROB * 100) }}"
         - choose:
+
             # === LYN-SEKVENS ===
             - conditions: "{{ do_lightning }}"
               sequence:
-                # 1) Forbered: demp alt litt for kontrast
+                # Forbered: demp alt litt for kontrast
                 - parallel:
                     - repeat:
                         for_each: "{{ NONRGB }}"
@@ -112,13 +123,14 @@ action:
 
                 - delay: "00:00:00.300"
 
-                # 2) Lyn-burst: flere blink, stagget på tvers av alle lys
+                # Lyn-burst: flere blink, stagget på tvers av alle lys
                 - variables:
                     flashes: "{{ range(3,6) | random }}"
                 - repeat:
                     count: "{{ flashes }}"
                     sequence:
                       - parallel:
+
                           # NON-RGB: kaldt hvitt blink via brightness
                           - repeat:
                               for_each: "{{ NONRGB }}"
@@ -136,7 +148,7 @@ action:
                                 - delay:
                                     milliseconds: "{{ range(100, 240) | random }}"
 
-                          # RGB: blink med kaldt hvitt/blått sting
+                          # RGB: blink med kaldt hvitt/blålig sting
                           - repeat:
                               for_each: "{{ RGB }}"
                               sequence:
@@ -154,7 +166,7 @@ action:
                                 - delay:
                                     milliseconds: "{{ range(100, 240) | random }}"
 
-                # 3) Etterglød/rumling – varme små blaff, bølgevis
+                # Etterglød/rumling – varme små blaff
                 - variables:
                     after_count: "{{ range(2,4) | random }}"
                 - repeat:
@@ -197,7 +209,7 @@ action:
                                 - delay:
                                     milliseconds: "{{ range(120, 240) | random }}"
 
-                # Pause før neste runde etter lyn
+                # Pause før neste lyn-runde
                 - delay:
                     seconds: "{{ range(3, 8) | random }}"
 
@@ -209,7 +221,8 @@ action:
                   count: "{{ flicker_steps }}"
                   sequence:
                     - parallel:
-                        # NON-RGB: organisk flakkering, små staggers
+
+                        # NON-RGB: organisk flakkering
                         - repeat:
                             for_each: "{{ NONRGB }}"
                             sequence:
@@ -222,11 +235,6 @@ action:
                                   milliseconds: "{{ range(60, 180) | random }}"
 
                         # RGB: rød/oransje/gul syklus
-                        - variables:
-                            hue_palette:
-                              - [255, 40, 40]     # rød
-                              - [255, 140, 0]     # oransje
-                              - [255, 220, 120]   # gyllent/gult
                         - repeat:
                             for_each: "{{ RGB }}"
                             sequence:
